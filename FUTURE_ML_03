@@ -1,0 +1,89 @@
+# task_3_resume_screening.py
+import re
+import pandas as pd
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+
+# 1. Benchmark Job Description & Target Skill Dictionary
+job_description = """
+We are seeking a Machine Learning Engineer with strong proficiency in Python, SQL,
+Scikit-learn, Pandas, NumPy, Deep Learning (PyTorch or TensorFlow), and Cloud Platforms (AWS or Azure).
+Experience with Natural Language Processing (NLP), Docker, Git, and MLOps deployment pipelines is required.
+"""
+
+target_skills = {
+    "python", "sql", "scikit-learn", "pandas", "numpy", "pytorch", 
+    "tensorflow", "aws", "azure", "nlp", "docker", "git", "mlops"
+}
+
+# 2. Candidate Resume Samples
+resumes_data = [
+    {
+        "Candidate": "Alice Smith",
+        "Resume": "Experienced ML Engineer skilled in Python, Scikit-learn, Pandas, NumPy, and PyTorch. Built NLP classifiers and integrated CI/CD with Git and Docker on AWS."
+    },
+    {
+        "Candidate": "Bob Jones",
+        "Resume": "Junior Data Analyst with strong SQL, Excel, Tableau, and basic Python scripting. Passionate about data visualization and reporting."
+    },
+    {
+        "Candidate": "Charlie Brown",
+        "Resume": "Senior Backend Developer specializing in Java, Spring Boot, Microservices, Kubernetes, and Docker. Familiar with SQL databases and Git."
+    },
+    {
+        "Candidate": "Diana Prince",
+        "Resume": "Data Scientist proficient in Python, SQL, Pandas, NumPy, Machine Learning, TensorFlow, MLOps, Docker, Git, Azure cloud deployment, and advanced NLP algorithms."
+    }
+]
+
+# 3. Parsing & Skill Extraction Functions
+def clean_text(text):
+    text = text.lower()
+    text = re.sub(r"[^a-zA-Z\s]", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+def extract_skills(text, skill_set):
+    words = set(clean_text(text).split())
+    # Identify exact tokens and composite tokens
+    found = {s for s in skill_set if s in text.lower()}
+    return found
+
+# 4. Screening and Scoring Pipeline
+vectorizer = TfidfVectorizer()
+cleaned_jd = clean_text(job_description)
+jd_skills = extract_skills(job_description, target_skills)
+
+results = []
+
+for candidate in resumes_data:
+    name = candidate["Candidate"]
+    resume_text = candidate["Resume"]
+    cleaned_resume = clean_text(resume_text)
+    
+    # TF-IDF Cosine Match Score
+    tfidf_matrix = vectorizer.fit_transform([cleaned_jd, cleaned_resume])
+    cos_sim = cosine_similarity(tfidf_matrix[0:1], tfidf_matrix[1:2])[0][0]
+    
+    # Skill Extraction and Gap Analysis
+    cand_skills = extract_skills(resume_text, target_skills)
+    matched_skills = cand_skills.intersection(jd_skills)
+    missing_skills = jd_skills - cand_skills
+    skill_coverage = len(matched_skills) / len(jd_skills) if jd_skills else 0.0
+    
+    # Composite Score (50% Semantic Text Fit + 50% Explicit Skill Coverage)
+    overall_score = round(((cos_sim * 0.5) + (skill_coverage * 0.5)) * 100, 2)
+    
+    results.append({
+        "Candidate": name,
+        "Overall Fit Score (%)": overall_score,
+        "Matched Skills": ", ".join(sorted(matched_skills)) if matched_skills else "None",
+        "Missing Skills": ", ".join(sorted(missing_skills)) if missing_skills else "None"
+    })
+
+# 5. Ranking
+ranking_df = pd.DataFrame(results).sort_values(by="Overall Fit Score (%)", ascending=False).reset_index(drop=True)
+
+print("=== Candidate Screening & Ranking Results ===")
+print(ranking_df.to_string())
+ranking_df.to_csv("candidate_ranking_report.csv", index=False)
