@@ -1,0 +1,79 @@
+# task_1_sales_forecasting.py
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+
+# 1. Dataset Generation (Historical Daily Sales over 2 Years)
+np.random.seed(42)
+date_range = pd.date_range(start="2024-01-01", end="2025-12-31", freq="D")
+n_days = len(date_range)
+
+trend = np.linspace(50, 150, n_days)
+seasonality = 25 * np.sin(2 * np.pi * date_range.dayofyear / 365.25)
+weekly_pattern = (date_range.dayofweek >= 5).astype(int) * 30  # weekend bump
+noise = np.random.normal(0, 10, n_days)
+
+sales = np.maximum(0, trend + seasonality + weekly_pattern + noise).round()
+df = pd.DataFrame({"Date": date_range, "Sales": sales})
+df.set_index("Date", inplace=True)
+
+# 2. Time-Based Feature Engineering
+df["DayOfWeek"] = df.index.dayofweek
+df["Month"] = df.index.month
+df["DayOfYear"] = df.index.dayofyear
+df["IsWeekend"] = df["DayOfWeek"].isin([5, 6]).astype(int)
+
+# Lag & Rolling Window Features
+df["Lag_1"] = df["Sales"].shift(1)
+df["Lag_7"] = df["Sales"].shift(7)
+df["Rolling_Mean_7"] = df["Sales"].shift(1).rolling(window=7).mean()
+df["Rolling_Std_7"] = df["Sales"].shift(1).rolling(window=7).std()
+
+df.dropna(inplace=True)
+
+# 3. Train-Test Split (Chronological Split)
+features = ["DayOfWeek", "Month", "DayOfYear", "IsWeekend", "Lag_1", "Lag_7", "Rolling_Mean_7", "Rolling_Std_7"]
+target = "Sales"
+
+split_idx = int(len(df) * 0.8)
+train_df = df.iloc[:split_idx]
+test_df = df.iloc[split_idx:]
+
+X_train, y_train = train_df[features], train_df[target]
+X_test, y_test = test_df[features], test_df[target]
+
+# 4. Model Training & Evaluation
+models = {
+    "Linear Regression": LinearRegression(),
+    "Random Forest Regressor": RandomForestRegressor(n_estimators=100, random_state=42)
+}
+
+results = {}
+for name, model in models.items():
+    model.fit(X_train, y_train)
+    preds = model.predict(X_test)
+    
+    mae = mean_absolute_error(y_test, preds)
+    rmse = np.sqrt(mean_squared_error(y_test, preds))
+    r2 = r2_score(y_test, preds)
+    results[name] = {"MAE": mae, "RMSE": rmse, "R2": r2, "Preds": preds}
+    print(f"[{name}] MAE: {mae:.2f} | RMSE: {rmse:.2f} | R²: {r2:.4f}")
+
+# 5. Visual Forecast Output
+best_preds = results["Random Forest Regressor"]["Preds"]
+
+plt.figure(figsize=(12, 6))
+plt.plot(train_df.index[-60:], train_df["Sales"].iloc[-60:], label="Recent Training Data", color="black")
+plt.plot(test_df.index, test_df["Sales"], label="Actual Demand", color="blue", alpha=0.7)
+plt.plot(test_df.index, best_preds, label="Forecast (Random Forest)", color="red", linestyle="--")
+plt.title("Business Demand & Sales Forecast vs. Actual Values")
+plt.xlabel("Date")
+plt.ylabel("Units Sold")
+plt.legend()
+plt.grid(True, linestyle="--", alpha=0.5)
+plt.tight_layout()
+plt.savefig("sales_forecast_output.png")
+print("Visual forecast saved as 'sales_forecast_output.png'.")
