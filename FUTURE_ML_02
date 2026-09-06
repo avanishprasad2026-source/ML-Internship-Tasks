@@ -1,0 +1,82 @@
+# task_2_ticket_classification.py
+import re
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.pipeline import Pipeline
+from sklearn.metrics import classification_report
+
+# 1. Dataset Generation
+raw_tickets = [
+    ("Payment deducted but order failed. Please refund immediately.", "Billing", "High"),
+    ("Cannot log into my account. Password reset link is expired.", "Account Access", "Medium"),
+    ("Feature request: Add dark mode toggle to the dashboard settings.", "General Query", "Low"),
+    ("Server throwing 500 error on checkout page. Critical bug!", "Technical Issue", "High"),
+    ("Double charged on my monthly subscription credit card invoice.", "Billing", "High"),
+    ("How do I update my email address on profile page?", "Account Access", "Low"),
+    ("API latency is exceeding 5 seconds in production endpoints.", "Technical Issue", "High"),
+    ("Where can I find documentation on Webhook integration?", "General Query", "Low"),
+    ("Unauthorized login attempt detected from unknown IP location.", "Account Access", "High"),
+    ("Invoice PDF download is giving corrupted file error.", "Billing", "Medium"),
+    ("Database connection timed out during background sync task.", "Technical Issue", "High"),
+    ("Can I change my registered phone number via support chat?", "Account Access", "Low"),
+    ("Pricing plan inquiry for annual enterprise tier discounts.", "General Query", "Low"),
+    ("Card declined repeatedly despite having valid available funds.", "Billing", "Medium"),
+    ("Mobile application keeps crashing immediately upon splash screen.", "Technical Issue", "High"),
+    ("Newsletter unsubscribe button is not functioning properly.", "General Query", "Low")
+]
+
+# Repeat sample to simulate a larger corpus
+tickets_df = pd.DataFrame(raw_tickets * 15, columns=["Text", "Category", "Priority"])
+
+# 2. Text Preprocessing
+def clean_text(text):
+    text = text.lower()
+    text = re.sub(r"[^a-zA-Z\s]", "", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+tickets_df["Clean_Text"] = tickets_df["Text"].apply(clean_text)
+
+# 3. Model Training: Category Classification
+X = tickets_df["Clean_Text"]
+y_cat = tickets_df["Category"]
+y_prio = tickets_df["Priority"]
+
+X_train, X_test, y_cat_train, y_cat_test = train_test_split(X, y_cat, test_size=0.25, random_state=42, stratify=y_cat)
+_, _, y_prio_train, y_prio_test = train_test_split(X, y_prio, test_size=0.25, random_state=42, stratify=y_prio)
+
+# Pipeline for Category Classifier
+cat_classifier = Pipeline([
+    ("tfidf", TfidfVectorizer(ngram_range=(1, 2))),
+    ("clf", LogisticRegression(max_iter=1000))
+])
+cat_classifier.fit(X_train, y_cat_train)
+cat_preds = cat_classifier.predict(X_test)
+
+print("=== Category Classification Report ===")
+print(classification_report(y_cat_test, cat_preds))
+
+# 4. Model Training: Priority Classifier
+prio_classifier = Pipeline([
+    ("tfidf", TfidfVectorizer(ngram_range=(1, 2))),
+    ("clf", RandomForestClassifier(n_estimators=100, random_state=42))
+])
+prio_classifier.fit(X_train, y_prio_train)
+prio_preds = prio_classifier.predict(X_test)
+
+print("=== Priority Tagging Report ===")
+print(classification_report(y_prio_test, prio_preds))
+
+# 5. Production Inference Function
+def route_support_ticket(incoming_text):
+    cleaned = clean_text(incoming_text)
+    pred_category = cat_classifier.predict([cleaned])[0]
+    pred_priority = prio_classifier.predict([cleaned])[0]
+    return {"Ticket": incoming_text, "Assigned_Category": pred_category, "Priority": pred_priority}
+
+# Test sample inference
+sample_query = "URGENT: Entire production database is down and customers cannot pay!"
+print("Inference Result:", route_support_ticket(sample_query))
